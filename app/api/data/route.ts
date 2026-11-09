@@ -1,8 +1,16 @@
-import { demoData } from "../../../lib/demo-data";
+import { sampleSnapshot } from "../../../lib/demo-data";
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-// Demo: the data is generated on every request (it changes once a minute).
-// In the real app this route reads the latest snapshot that the main bot pushed to private storage.
+
+// Cached sample snapshot only. This route does not collect data and does not call out.
 export async function GET() {
-  return Response.json(demoData(), { headers: { "Cache-Control": "no-store, max-age=0" } });
+  const body = sampleSnapshot();
+  return Response.json(body, {
+    headers: {
+      "Cache-Control": "no-store, max-age=0",
+      "X-Campus-Snapshot": body.provenance.revision,
+      "X-Campus-Kind": "sample",
+    },
+  });
 }

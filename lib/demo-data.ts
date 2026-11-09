@@ -1,20 +1,28 @@
-// Demo data: invented teams, agents and tasks. Nothing here is real.
-// Times are generated relative to "now" so countdowns, "waiting since" and the live feed always look fresh.
-// The data changes once a minute (timestamp + one rotating feed item), so the ⟳ button visibly loads new data.
-import { TZ } from "./tz";
+// Sample snapshot for this public preview. Every team, task, approval, and usage
+// figure is invented. Narrative times are frozen to SAMPLE_AS_OF so a reload cannot
+// look like newly collected activity. Routine countdowns use the viewer's clock
+// only so the campus clocks still move; they are not a live calendar.
+export const SAMPLE_REVISION = "sample-roster-1";
+export const SAMPLE_AS_OF_MS = Date.parse("2026-11-09T12:00:00Z");
+export const SAMPLE_UPDATED = "Sample snapshot · 9.11.2026, 12:00 UTC · not a live collection";
+
+export const SAMPLE_PROVENANCE = {
+  kind: "sample" as const,
+  revision: SAMPLE_REVISION,
+  asOf: "2026-11-09T12:00:00Z",
+  note: "Invented example data. Usage figures are not actual usage. Refresh only reloads this snapshot. No bot, mailbox, calendar, or other system is contacted.",
+};
 
 const pad = (n: number) => String(n).padStart(2, "0");
 function parts(ms: number) {
-  const f = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as any).formatToParts(new Date(ms));
+  const f = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as any).formatToParts(new Date(ms));
   const g = (t: string) => Number(f.find((p) => p.type === t)?.value || 0);
   return { d: g("day"), m: g("month"), y: g("year"), hh: g("hour"), mm: g("minute") };
 }
 const H = 3600e3, MIN = 60e3, DAY = 24 * H;
-/** "D.M HH:MM" for a moment `ago` ms in the past */
-function ago(now: number, ms: number) { const p = parts(now - ms); return `${p.d}.${p.m} ${pad(p.hh)}:${pad(p.mm)}`; }
-/** "D.M" for a day `days` ago (or ahead with a negative value) */
-function day(now: number, days: number) { const p = parts(now - days * DAY); return `${p.d}.${p.m}`; }
-/** ISO time with offset, `ahead` ms in the future (offset taken from the configured zone) */
+const AS = SAMPLE_AS_OF_MS;
+function ago(ms: number) { const p = parts(AS - ms); return `${p.d}.${p.m} ${pad(p.hh)}:${pad(p.mm)}`; }
+function day(days: number) { const p = parts(AS - days * DAY); return `${p.d}.${p.m}`; }
 function iso(now: number, ahead: number) {
   const t = now + ahead; const p = parts(t);
   const off = Math.round((Date.UTC(p.y, p.m - 1, p.d, p.hh, p.mm) - Math.floor(t / MIN) * MIN) / MIN);
@@ -22,196 +30,276 @@ function iso(now: number, ahead: number) {
   return `${p.y}-${pad(p.m)}-${pad(p.d)}T${pad(p.hh)}:${pad(p.mm)}:00${s}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
 }
 
-// rotating "breaking" feed items: one is pinned on top each minute
-const LIVE = [
-  { team: "marketing", text: "Newsletter campaign is live: 38 sign-ups in the first hour" },
-  { team: "product", text: "Google sign-in bug fixed and verified" },
-  { team: "sales", text: "New demo booked for Thursday at 11:00" },
-  { team: "support", text: "Average response time is down to 14 minutes" },
-  { team: "research", text: "Summary of 12 user interviews is ready to read" },
-  { team: "finance", text: "This month's expense report is ready for your approval" },
-];
+const desk = (name: string, theme: string) => ({ name, role: `Sample desk · ${theme} · not a real bot` });
 
 export function demoData(nowMs = Date.now()) {
-  const now = Math.floor(nowMs / MIN) * MIN; // changes once a minute
-  const p = parts(now);
-  const live = LIVE[Math.floor(now / MIN) % LIVE.length];
-  const fresh = (id: string) => (live.team === id ? [{ time: ago(now, 0), text: live.text }] : []);
+  const now = Math.floor(nowMs / MIN) * MIN;
 
   const TEAMS = [
     {
-      id: "marketing", name: "Marketing", status: "active",
-      lead: { name: "Nova", role: "Marketing lead: strategy and coordination" },
-      members: [{ name: "Echo", role: "Content and social" }, { name: "Pixel", role: "Design and creative" }, { name: "Scout", role: "SEO and communities" }, { name: "Mailer", role: "Newsletter and email" }],
-      work: "Goal: 1,000 newsletter sign-ups by the end of the month. Launch campaign, 3 posts a week and 5 creator collaborations.",
-      next: "Approve the launch email and next week's post calendar.",
-      lines: ["Goal: 1,000 sign-ups", "Launch campaign is live", "3 posts a week", "5 collaborations"],
+      id: "chief", name: "Chief Of Staff", status: "active",
+      lead: { name: "Chief Of Staff", role: "Sample room · coordination examples" },
+      members: [desk("Brief", "weekly brief"), desk("Agenda", "sample agenda")],
+      work: "Example theme: a coordination room. Sample goal is a one-page weekly brief. Nothing here is a real status.",
+      next: "Example: look at the sample brief outline.",
+      lines: ["Example brief", "Sample agenda", "Not live", "Demo only"],
       pending: [
-        { id: "mk-launch-mail", what: "Approve the launch email (version B, single button)", since: ago(now, 3 * H) },
-        { id: "mk-calendar", what: "Next week's calendar: 3 posts and 2 stories. Approve?", since: ago(now, 26 * H) },
-        { id: "mk-collab", what: "Collaboration with a creator (12K followers) for a free year of access. Approve?", since: iso(now, -5 * H) },
+        { id: "ex-chief-brief", what: "Example: review a fictional weekly brief outline. This is not a real approval.", since: ago(5 * H) },
       ],
-      usage: "24%",
-      goal: { label: "Newsletter sign-ups", current: 612, target: 1000, due: day(now, -18) },
-      activity: [...fresh("marketing"),
-        { time: ago(now, 40 * MIN), text: "Echo finished 3 drafts of the launch post" },
-        { time: ago(now, 2 * H), text: "Pixel uploaded 4 versions of the hero banner" },
-        { time: ago(now, 5 * H), text: "Scout found 6 relevant communities to post in" },
-        { time: ago(now, 26 * H), text: "Newsletter passed 600 sign-ups" }],
+      usage: "example 8%",
+      goal: { label: "Example brief sections", current: 3, target: 5, due: day(-4) },
+      activity: [
+        { time: ago(40 * MIN), text: "Example: a sample outline for the weekly brief was added to the board." },
+        { time: ago(3 * H), text: "Example: sample agenda items were grouped into three themes." },
+        { time: ago(26 * H), text: "Example: this room was filled with invented coordination notes." },
+      ],
       tasks: [
-        { text: "3 drafts of the launch post", state: "doing", owner: "Echo" },
-        { text: "Hero banner in two versions", state: "doing", owner: "Pixel" },
-        { text: "List of 20 communities and forums", state: "doing", owner: "Scout" },
-        { text: "Launch email to the list", state: "todo", owner: "Mailer" },
-        { text: "Approve the launch email", state: "todo", owner: "Me" },
-        { text: "Last week's post performance review", state: "done", owner: "Nova" },
-        { text: "Newsletter landing page", state: "done", owner: "Pixel" },
+        { text: "Example: draft the sample brief outline", state: "doing", owner: "Brief" },
+        { text: "Example: list three sample priorities", state: "todo", owner: "Agenda" },
+        { text: "Example: mark the brief as a demo", state: "done", owner: "Chief Of Staff" },
       ],
       routines: [
-        { id: "mk-daily", owner: "Nova", name: "Daily marketing summary", schedule: "Mon–Fri at 09:00", state: "on", lastRun: ago(now, 20 * H), lastResult: "ok", next: iso(now, 4 * H), perWeek: 5 },
-        { id: "mk-posts", owner: "Echo", name: "Schedule approved posts", schedule: "Mon, Wed and Fri at 12:00", state: "on", next: iso(now, 21 * H), perWeek: 3 },
-        { id: "mk-seo", owner: "Scout", name: "Weekly rankings check", schedule: "Every Sunday at 08:30", state: "on", lastRun: ago(now, 3 * DAY), lastResult: "fail", next: iso(now, 4 * DAY), perWeek: 1, note: "Failed on a rate limit. Will retry on the next run" },
+        { id: "ex-chief-daily", owner: "Chief Of Staff", name: "Example morning brief", schedule: "Sample: weekdays at 09:00", state: "on", lastRun: ago(20 * H), lastResult: "ok", next: iso(now, 5 * H), perWeek: 5, note: "Example schedule. Not a real routine." },
       ],
-      botUsage: [{ owner: "Echo", pct: 8 }, { owner: "Nova", pct: 6 }, { owner: "Pixel", pct: 5 }, { owner: "Scout", pct: 3 }, { owner: "Mailer", pct: 2 }],
+      botUsage: [{ owner: "Chief Of Staff", pct: 4 }, { owner: "Brief", pct: 2 }, { owner: "Agenda", pct: 2 }],
     },
     {
-      id: "product", name: "Product", status: "active",
-      lead: { name: "Atlas", role: "Product lead: roadmap and releases" },
-      members: [{ name: "Forge", role: "Development and bugs" }, { name: "Lens", role: "Testing and QA" }, { name: "Draft", role: "UX and docs" }],
-      work: "Version 2.4: Google sign-in, dark mode and a new settings page. Release planned in 5 days.",
-      next: "Decide whether dark mode ships in this version or the next.",
-      lines: ["v2.4 in 5 days", "Google sign-in", "Dark mode", "New settings page"],
+      id: "tech", name: "Tech bot", status: "active",
+      lead: { name: "Tech bot", role: "Sample room · tools and checks" },
+      members: [desk("Patch", "sample checks"), desk("Probe", "sample notes")],
+      work: "Example theme: a tools room. Sample work is a checklist for a fictional health check. No system is being monitored.",
+      next: "Example: read the sample checklist.",
+      lines: ["Example checks", "Sample notes", "No live hosts"],
       pending: [
-        { id: "pr-dark", what: "Dark mode: ship in 2.4 (2 more days of work) or move it to 2.5?", since: ago(now, 6 * H) },
-        { id: "pr-beta", what: "Open a beta for 50 users before the full release?", since: ago(now, 30 * H) },
+        { id: "ex-tech-check", what: "Example: keep a fictional health-check note on the sample board. Not a real request.", since: ago(8 * H) },
       ],
-      usage: "21%",
-      goal: { label: "Features in v2.4", current: 7, target: 9, due: day(now, -5) },
-      activity: [...fresh("product"),
-        { time: ago(now, 25 * MIN), text: "Lens passed 42 of 45 tests" },
-        { time: ago(now, 3 * H), text: "Forge merged Google sign-in" },
-        { time: ago(now, 8 * H), text: "Draft updated the settings screens" }],
+      usage: "example 7%",
+      goal: { label: "Example checklist items", current: 4, target: 6, due: day(-6) },
+      activity: [
+        { time: ago(70 * MIN), text: "Example: two sample checklist rows were marked done." },
+        { time: ago(6 * H), text: "Example: a sample diagram of rooms was sketched." },
+      ],
       tasks: [
-        { text: "Last 3 sign-in tests", state: "doing", owner: "Lens" },
-        { text: "Dark mode: colors and components", state: "doing", owner: "Forge" },
-        { text: "Settings page docs", state: "doing", owner: "Draft" },
-        { text: "Decide on dark mode", state: "todo", owner: "Me" },
-        { text: "Release notes for v2.4", state: "todo", owner: "Atlas" },
-        { text: "Google sign-in", state: "done", owner: "Forge" },
+        { text: "Example: write the sample health-check list", state: "doing", owner: "Probe" },
+        { text: "Example: invent a sample status color key", state: "todo", owner: "Patch" },
+        { text: "Example: label the room as demo data", state: "done", owner: "Tech bot" },
       ],
       routines: [
-        { id: "pr-nightly", owner: "Lens", name: "Nightly automated tests", schedule: "Every night at 02:00", state: "on", lastRun: ago(now, 12 * H), lastResult: "ok", next: iso(now, 11 * H), perWeek: 7 },
-        { id: "pr-weekly", owner: "Atlas", name: "Weekly roadmap summary", schedule: "Every Thursday at 16:00", state: "on", next: iso(now, 2 * DAY), perWeek: 1 },
+        { id: "ex-tech-nightly", owner: "Probe", name: "Example nightly note", schedule: "Sample: every night at 02:00", state: "on", lastRun: ago(14 * H), lastResult: "ok", next: iso(now, 10 * H), perWeek: 7, note: "Example only. Nothing runs." },
       ],
-      botUsage: [{ owner: "Forge", pct: 9 }, { owner: "Lens", pct: 6 }, { owner: "Atlas", pct: 4 }, { owner: "Draft", pct: 2 }],
+      botUsage: [{ owner: "Tech bot", pct: 3 }, { owner: "Probe", pct: 2 }, { owner: "Patch", pct: 2 }],
     },
     {
-      id: "sales", name: "Sales", status: "active",
-      lead: { name: "Vega", role: "Sales lead: leads and demos" },
-      members: [{ name: "Hunter", role: "Lead research" }, { name: "Pitch", role: "Decks and quotes" }, { name: "Closer", role: "Follow-ups" }],
-      work: "Goal: 10 demos this month. 40 new leads on the list, 6 demos already booked.",
-      next: "Approve the quote for the big account and the follow-up template.",
-      lines: ["6 of 10 demos", "40 new leads", "Quote waiting", "Follow up after 3 days"],
+      id: "coach", name: "LLM Coach", status: "active",
+      lead: { name: "LLM Coach", role: "Sample room · practice prompts" },
+      members: [desk("Drill", "sample drills"), desk("Notes", "sample notes")],
+      work: "Example theme: a coaching room. Sample drills are fictional prompt exercises. No model is being called.",
+      next: "Example: open the sample drill card.",
+      lines: ["Example drills", "Sample prompts", "No model calls"],
       pending: [
-        { id: "sl-quote", what: "Quote for 25 seats at 15% off. Approve and send?", since: ago(now, 2 * H) },
-        { id: "sl-template", what: "New post-demo follow-up email template. Approve?", since: ago(now, 50 * H) },
+        { id: "ex-coach-drill", what: "Example: pick one of three fictional practice drills. Not a real assignment.", since: ago(12 * H) },
       ],
-      usage: "15%",
-      goal: { label: "Demos this month", current: 6, target: 10, due: day(now, -12) },
-      activity: [...fresh("sales"),
-        { time: ago(now, 55 * MIN), text: "Hunter added 12 leads from logistics" },
-        { time: ago(now, 4 * H), text: "Pitch prepared a custom deck for tomorrow's demo" },
-        { time: ago(now, 28 * H), text: "Sixth demo of the month booked" }],
+      usage: "example 6%",
+      goal: { label: "Example drills sketched", current: 2, target: 4, due: day(-9) },
+      activity: [
+        { time: ago(2 * H), text: "Example: a sample prompt drill was written on the board." },
+        { time: ago(9 * H), text: "Example: sample coaching notes were filed under 'demo'." },
+      ],
       tasks: [
-        { text: "Research 20 more leads", state: "doing", owner: "Hunter" },
-        { text: "Deck for tomorrow's demo", state: "doing", owner: "Pitch" },
-        { text: "Follow up on 4 demos from this week", state: "todo", owner: "Closer" },
-        { text: "Approve the quote", state: "todo", owner: "Me" },
-        { text: "First list of 40 leads", state: "done", owner: "Hunter" },
+        { text: "Example: write a sample prompt drill", state: "doing", owner: "Drill" },
+        { text: "Example: add a sample reflection line", state: "todo", owner: "Notes" },
+        { text: "Example: title the room LLM Coach", state: "done", owner: "LLM Coach" },
       ],
       routines: [
-        { id: "sl-leads", owner: "Hunter", name: "Daily lead search", schedule: "Mon–Fri at 10:00", state: "on", lastRun: ago(now, 22 * H), lastResult: "ok", next: iso(now, 2 * H + 15 * MIN), perWeek: 5 },
-        { id: "sl-follow", owner: "Closer", name: "Follow-up reminders", schedule: "Every day at 17:00", state: "paused", perWeek: 5, note: "Paused until the new template is approved" },
+        { id: "ex-coach-week", owner: "LLM Coach", name: "Example weekly drill", schedule: "Sample: Mondays at 10:00", state: "on", lastRun: ago(2 * DAY), lastResult: "ok", next: iso(now, 2 * DAY), perWeek: 1, note: "Example schedule. Not a real routine." },
       ],
-      botUsage: [{ owner: "Hunter", pct: 7 }, { owner: "Pitch", pct: 4 }, { owner: "Vega", pct: 3 }, { owner: "Closer", pct: 1 }],
+      botUsage: [{ owner: "LLM Coach", pct: 3 }, { owner: "Drill", pct: 2 }, { owner: "Notes", pct: 1 }],
     },
     {
-      id: "support", name: "Support", status: "partial",
-      lead: { name: "Harbor", role: "Support lead: tickets and satisfaction" },
-      members: [{ name: "Relay", role: "Ticket replies" }, { name: "Index", role: "Knowledge base and FAQ" }],
-      work: "Replies within an hour. 9 open tickets, 3 of them about sign-in.",
-      next: "Approve 4 new FAQ answers.",
-      lines: ["9 open tickets", "Replies in 14 min", "4 new FAQ answers"],
+      id: "coder", name: "Coder Bot", status: "active",
+      lead: { name: "Coder Bot", role: "Sample room · fictional code tasks" },
+      members: [desk("Diff", "sample diff"), desk("Test", "sample tests")],
+      work: "Example theme: a code room. Tasks describe a fictional readme tweak. No repository is connected.",
+      next: "Example: read the sample diff note.",
+      lines: ["Example diff", "Sample tests", "No repo link"],
       pending: [
-        { id: "sp-faq", what: "4 new FAQ answers. Publish?", since: ago(now, 5 * H) },
-        { id: "sp-refund", what: "A customer asks for a refund for an unused month. Approve the refund?", since: ago(now, 75 * MIN) },
+        { id: "ex-coder-note", what: "Example: file a fictional note that a sample diff is ready to read. Not a real review.", since: ago(4 * H) },
       ],
-      usage: "9%",
-      activity: [...fresh("support"),
-        { time: ago(now, 35 * MIN), text: "Relay closed 5 tickets this morning" },
-        { time: ago(now, 6 * H), text: "Index wrote 4 new FAQ answers" }],
+      usage: "example 9%",
+      goal: { label: "Example sample files", current: 1, target: 3, due: day(-3) },
+      activity: [
+        { time: ago(50 * MIN), text: "Example: a sample test name was added to the board." },
+        { time: ago(7 * H), text: "Example: the room was marked 'no repository connected'." },
+      ],
       tasks: [
-        { text: "Reply to 9 open tickets", state: "doing", owner: "Relay" },
-        { text: "Update the sign-in FAQ", state: "doing", owner: "Index" },
-        { text: "Decide on the refund request", state: "todo", owner: "Me" },
-        { text: "Weekly ticket summary", state: "done", owner: "Harbor" },
+        { text: "Example: sketch a sample diff summary", state: "doing", owner: "Diff" },
+        { text: "Example: name two sample tests", state: "doing", owner: "Test" },
+        { text: "Example: state that no repo is linked", state: "done", owner: "Coder Bot" },
       ],
       routines: [
-        { id: "sp-inbox", owner: "Relay", name: "Check the support inbox", schedule: "Hourly during work hours", state: "on", lastRun: ago(now, 40 * MIN), lastResult: "ok", next: iso(now, 20 * MIN), perWeek: 45, note: "Runs a lot. Could move to every 2 hours" },
+        { id: "ex-coder-tests", owner: "Test", name: "Example test reminder", schedule: "Sample: weekdays at 16:00", state: "paused", perWeek: 5, note: "Example paused state. Nothing is scheduled for real." },
       ],
-      botUsage: [{ owner: "Relay", pct: 6 }, { owner: "Index", pct: 2 }, { owner: "Harbor", pct: 1 }],
+      botUsage: [{ owner: "Coder Bot", pct: 5 }, { owner: "Diff", pct: 2 }, { owner: "Test", pct: 2 }],
     },
     {
-      id: "research", name: "Research", status: "active",
-      lead: { name: "Orbit", role: "Research lead: users and market" },
-      members: [{ name: "Probe", role: "User interviews" }, { name: "Chart", role: "Data and analysis" }],
-      work: "12 user interviews about onboarding and a competitor review of 5 similar products.",
-      next: "Read the interview summary and pick 3 improvements for the quarter.",
-      lines: ["12 interviews", "5 competitors", "3 improvements this quarter"],
-      pending: [{ id: "rs-top3", what: "Pick 3 of the 8 improvements from the interviews", since: ago(now, 20 * H) }],
-      usage: "8%",
-      activity: [...fresh("research"),
-        { time: ago(now, 90 * MIN), text: "Chart finished a comparison table of 5 competitors" },
-        { time: ago(now, 9 * H), text: "Probe finished interview 12 of 12" }],
-      tasks: [
-        { text: "Competitor comparison table", state: "done", owner: "Chart" },
-        { text: "Interview summary", state: "doing", owner: "Probe" },
-        { text: "Onboarding drop-off chart", state: "doing", owner: "Chart" },
-        { text: "Pick 3 improvements", state: "todo", owner: "Me" },
+      id: "shopping", name: "Shopping Bot", status: "partial",
+      lead: { name: "Shopping Bot", role: "Sample room · fictional errands" },
+      members: [desk("List", "sample list"), desk("Compare", "sample compare")],
+      work: "Example theme: an errand room. The list is three invented office supplies. No store or order is connected.",
+      next: "Example: glance at the sample supply list.",
+      lines: ["Example list", "No orders", "Demo prices"],
+      pending: [
+        { id: "ex-shop-list", what: "Example: a fictional supply list (notebook, pens, tape). Not an order and not a real approval.", since: ago(30 * H) },
       ],
-      routines: [{ id: "rs-trends", owner: "Orbit", name: "Weekly trends review", schedule: "Every Monday at 09:30", state: "on", next: iso(now, 3 * DAY + 2 * H), perWeek: 1 }],
-      botUsage: [{ owner: "Chart", pct: 4 }, { owner: "Probe", pct: 3 }, { owner: "Orbit", pct: 1 }],
+      usage: "example 4%",
+      goal: { label: "Example list rows", current: 3, target: 3, due: day(-2) },
+      activity: [
+        { time: ago(5 * H), text: "Example: three invented supply rows were written down." },
+        { time: ago(28 * H), text: "Example: the room notes that prices are not real." },
+      ],
+      tasks: [
+        { text: "Example: write a three-line sample list", state: "doing", owner: "List" },
+        { text: "Example: add the words 'not an order'", state: "todo", owner: "Compare" },
+        { text: "Example: label prices as fiction", state: "done", owner: "Shopping Bot" },
+      ],
+      routines: [
+        { id: "ex-shop-week", owner: "Shopping Bot", name: "Example list reminder", schedule: "Sample: Fridays at 11:00", state: "on", next: iso(now, 3 * DAY), perWeek: 1, note: "Example schedule. No store is checked." },
+      ],
+      botUsage: [{ owner: "Shopping Bot", pct: 2 }, { owner: "List", pct: 1 }, { owner: "Compare", pct: 1 }],
     },
     {
-      id: "finance", name: "Finance", status: "hold",
-      lead: { name: "Ledger", role: "Finance lead: budget and reports" },
-      members: [{ name: "Tally", role: "Expenses and invoices" }, { name: "Forecast", role: "Forecasts and cash flow" }],
-      work: "Waiting for approval of this month's expense report before the quarterly forecast.",
-      next: "Approve the expense report.",
-      lines: ["Expense report ready", "Waiting for approval", "Quarterly forecast next"],
-      pending: [{ id: "fn-report", what: "This month's expense report: 14 invoices, 2 exceptions. Approve?", since: ago(now, 4 * DAY) }],
-      usage: "6%",
-      activity: [...fresh("finance"), { time: ago(now, 4 * DAY), text: "Tally finished the expense report" }],
-      tasks: [
-        { text: "Quarterly cash-flow forecast", state: "todo", owner: "Forecast" },
-        { text: "Approve the expense report", state: "todo", owner: "Me" },
-        { text: "Monthly expense report", state: "done", owner: "Tally" },
+      id: "calendar", name: "Calendar Bot", status: "active",
+      lead: { name: "Calendar Bot", role: "Sample room · fictional dates" },
+      members: [desk("Slot", "sample slots"), desk("Remind", "sample reminders")],
+      work: "Example theme: a dates room. The entries are made-up placeholders. No calendar account is connected.",
+      next: "Example: read the sample placeholder slots.",
+      lines: ["Example slots", "No calendar", "Demo times"],
+      pending: [
+        { id: "ex-cal-slot", what: "Example: choose between two fictional placeholder slots. Not a real booking.", since: ago(6 * H) },
       ],
-      routines: [{ id: "fn-month", owner: "Ledger", name: "Month-end close", schedule: "On the 1st of every month at 08:00", state: "on", next: iso(now, 9 * DAY), perWeek: 0.25 }],
-      botUsage: [{ owner: "Tally", pct: 3 }, { owner: "Ledger", pct: 2 }, { owner: "Forecast", pct: 1 }],
+      usage: "example 5%",
+      goal: { label: "Example placeholder slots", current: 2, target: 4, due: day(-7) },
+      activity: [
+        { time: ago(90 * MIN), text: "Example: two fictional time slots were written on the board." },
+        { time: ago(20 * H), text: "Example: the room says no calendar is connected." },
+      ],
+      tasks: [
+        { text: "Example: write two sample time slots", state: "doing", owner: "Slot" },
+        { text: "Example: add a sample reminder line", state: "todo", owner: "Remind" },
+        { text: "Example: mark times as fiction", state: "done", owner: "Calendar Bot" },
+      ],
+      routines: [
+        { id: "ex-cal-daily", owner: "Remind", name: "Example day-ahead note", schedule: "Sample: every day at 18:00", state: "on", lastRun: ago(18 * H), lastResult: "fail", next: iso(now, 6 * H), perWeek: 7, note: "Example failure flag for the campus clocks. No reminder was sent." },
+      ],
+      botUsage: [{ owner: "Calendar Bot", pct: 3 }, { owner: "Slot", pct: 1 }, { owner: "Remind", pct: 1 }],
     },
-    { id: "legal", name: "Legal", status: "frozen", lead: { name: "Clause", role: "Legal lead" }, members: [{ name: "Draftsman", role: "Contracts" }], work: "Frozen until further notice. Routines are paused.", lines: [], pending: [], activity: [], tasks: [], routines: [{ id: "lg-review", owner: "Clause", name: "Contract review", schedule: "Every Wednesday", state: "paused", perWeek: 1 }] },
-    { id: "events", name: "Events", status: "frozen", lead: { name: "Stage", role: "Events lead" }, members: [{ name: "Ticket", role: "Registration and logistics" }], work: "Frozen until further notice.", lines: [], pending: [], activity: [], tasks: [], routines: [] },
-    { id: "partners", name: "Partners", status: "frozen", lead: { name: "Bridge", role: "Partnerships lead" }, members: [{ name: "Link", role: "Partner outreach" }], work: "Frozen until further notice.", lines: [], pending: [], activity: [], tasks: [], routines: [] },
+    {
+      id: "email", name: "Email Bot", status: "active",
+      lead: { name: "Email Bot", role: "Sample room · fictional drafts" },
+      members: [desk("Draft", "sample draft"), desk("Folder", "sample folders")],
+      work: "Example theme: a drafts room. The text is a fake three-line note. No mailbox is connected and no message exists.",
+      next: "Example: read the sample draft title.",
+      lines: ["Example draft", "No mailbox", "Not a message"],
+      pending: [
+        { id: "ex-mail-draft", what: "Example: a fictional draft title, 'Sample note'. Not an email and not a real approval.", since: ago(9 * H) },
+      ],
+      usage: "example 5%",
+      goal: { label: "Example draft lines", current: 3, target: 3, due: day(-1) },
+      activity: [
+        { time: ago(4 * H), text: "Example: a three-line fictional draft title was pinned." },
+        { time: ago(22 * H), text: "Example: the room repeats that no mailbox is connected." },
+      ],
+      tasks: [
+        { text: "Example: title a sample draft", state: "doing", owner: "Draft" },
+        { text: "Example: file it under 'demo'", state: "todo", owner: "Folder" },
+        { text: "Example: state that nothing was sent", state: "done", owner: "Email Bot" },
+      ],
+      routines: [
+        { id: "ex-mail-hour", owner: "Email Bot", name: "Example folder glance", schedule: "Sample: hourly in the story only", state: "paused", perWeek: 0, note: "Paused example. The preview does not read or send mail." },
+      ],
+      botUsage: [{ owner: "Email Bot", pct: 3 }, { owner: "Draft", pct: 1 }, { owner: "Folder", pct: 1 }],
+    },
+    {
+      id: "grok", name: "Grok Bot", status: "active",
+      lead: { name: "Grok Bot", role: "Sample room · fictional usage story" },
+      members: [desk("Prompt", "sample prompt"), desk("Check", "sample check")],
+      work: "Example theme: a usage story room. The percentages on this campus are round example numbers, not actual usage.",
+      next: "Example: read the sample usage caption.",
+      lines: ["Example usage", "Not actual", "No model call"],
+      pending: [
+        { id: "ex-grok-caption", what: "Example: confirm the caption 'sample usage, not actual usage' stays visible. Not a real approval.", since: ago(2 * H) },
+      ],
+      usage: "example 11%",
+      goal: { label: "Example captions placed", current: 1, target: 2, due: day(-5) },
+      activity: [
+        { time: ago(35 * MIN), text: "Example: the usage caption was set to 'not actual usage'." },
+        { time: ago(11 * H), text: "Example: this room does not call a model when the page loads." },
+      ],
+      tasks: [
+        { text: "Example: write the sample usage caption", state: "doing", owner: "Check" },
+        { text: "Example: keep the page from calling out", state: "doing", owner: "Grok Bot" },
+        { text: "Example: name the room Grok Bot", state: "done", owner: "Prompt" },
+      ],
+      routines: [
+        { id: "ex-grok-week", owner: "Grok Bot", name: "Example weekly caption", schedule: "Sample: Sundays at 09:00", state: "unknown", perWeek: 1, note: "Unknown on purpose: this preview cannot see real routines." },
+      ],
+      botUsage: [{ owner: "Grok Bot", pct: 6 }, { owner: "Prompt", pct: 3 }, { owner: "Check", pct: 2 }],
+    },
+    {
+      id: "realestate", name: "Real Estate Bot", status: "partial",
+      lead: { name: "Real Estate Bot", role: "Sample room · fictional listings" },
+      members: [desk("Listing", "sample card"), desk("Tour", "sample tour")],
+      work: "Example theme: a listings room. Cards are invented and have no address. No property feed is connected.",
+      next: "Example: read the sample listing card.",
+      lines: ["Example card", "No address", "Not a listing"],
+      pending: [
+        { id: "ex-re-card", what: "Example: a fictional listing card with no address. Not a property and not a real approval.", since: ago(15 * H) },
+      ],
+      usage: "example 3%",
+      goal: { label: "Example cards with no address", current: 1, target: 2, due: day(-8) },
+      activity: [
+        { time: ago(3 * H), text: "Example: one fictional listing card was added, with no address." },
+        { time: ago(2 * DAY), text: "Example: the room states that no property feed is connected." },
+      ],
+      tasks: [
+        { text: "Example: write a sample card with no address", state: "doing", owner: "Listing" },
+        { text: "Example: add the words 'not a listing'", state: "todo", owner: "Tour" },
+        { text: "Example: leave the address blank", state: "done", owner: "Real Estate Bot" },
+      ],
+      routines: [
+        { id: "ex-re-week", owner: "Real Estate Bot", name: "Example card review", schedule: "Sample: Wednesdays at 15:00", state: "on", next: iso(now, 36 * H), perWeek: 1, note: "Example schedule. No listings are fetched." },
+      ],
+      botUsage: [{ owner: "Real Estate Bot", pct: 2 }, { owner: "Listing", pct: 1 }],
+    },
   ];
 
   return {
-    UPDATED: `${p.d}.${p.m}.${p.y}, ${pad(p.hh)}:${pad(p.mm)}`,
+    UPDATED: SAMPLE_UPDATED,
+    provenance: SAMPLE_PROVENANCE,
     USAGE: {
-      weeklyPct: 42, reset: `${day(now, -3)}, 18:00`, onDemandPct: 0, period: `${day(now, 4)} to ${day(now, 0)}`,
-      byTeam: [{ label: "Marketing", pct: 24 }, { label: "Product", pct: 21 }, { label: "Sales", pct: 15 }, { label: "Support", pct: 9 }, { label: "Research", pct: 8 }, { label: "Everyone else", pct: 23 }],
-      topBots: [{ label: "Main bot", pct: 14 }, { label: "Product · Forge", pct: 9 }, { label: "Marketing · Echo", pct: 8 }, { label: "Sales · Hunter", pct: 7 }, { label: "Support · Relay", pct: 6 }],
+      weeklyPct: 36,
+      reset: "example reset, not a real billing reset",
+      onDemandPct: 0,
+      period: "example period, not actual usage",
+      byTeam: [
+        { label: "Example · Chief Of Staff", pct: 8 },
+        { label: "Example · Tech bot", pct: 7 },
+        { label: "Example · LLM Coach", pct: 6 },
+        { label: "Example · Coder Bot", pct: 9 },
+        { label: "Example · others", pct: 6 },
+      ],
+      topBots: [
+        { label: "Example · Grok Bot (not actual)", pct: 6 },
+        { label: "Example · Coder Bot (not actual)", pct: 5 },
+        { label: "Example · Chief Of Staff (not actual)", pct: 4 },
+        { label: "Example · Tech bot (not actual)", pct: 3 },
+        { label: "Example · Email Bot (not actual)", pct: 3 },
+      ],
     },
     TEAMS,
   };
+}
+
+export function sampleSnapshot(nowMs = Date.now()) {
+  return demoData(nowMs);
 }

@@ -24,5 +24,5 @@
   "engines": {
     "node": ">=20"
   },
-  "description": "3D control center for a team of AI agents (demo with invented data). Built with Grok Bot."
+  "description": "Sample 3D campus preview with invented data. No live connections."
 }

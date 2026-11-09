@@ -1,3 +1,18 @@
+# Sample campus preview (this fork)
+
+This fork's running app is an interactive **sample** of the 3D campus. The rooms are Chief Of Staff, Tech bot, LLM Coach, Coder Bot, Shopping Bot, Calendar Bot, Email Bot, Grok Bot, and Real Estate Bot. Every task, activity line, queue item, and usage figure is invented. The page labels them as examples. Usage figures are not actual usage.
+
+Refresh only reloads that cached sample. Approve, reject, ask, and other command buttons stay visible so the campus can be explored, and they do not send, approve, or contact anything. There is no webhook. A List control opens the same sample as an accessible list; the 3D campus stays the default.
+
+Do not run `skill/SKILL.md` or the scripts under `skill/reference/scripts/`. They describe a different, live setup and are not part of this preview. MIT license: see [LICENSE](LICENSE). Copyright (c) 2026 Sar Bar-Shem.
+
+```bash
+npm ci
+npm run dev
+```
+
+The upstream demo notes follow.
+
 # Grok Bot Control Center (demo)
 
 <!-- LAUNCH DAY: replace sarbarshem (here and in skill/SKILL.md): sed -i 's/sarbarshem/<github-owner>/g' README.md skill/SKILL.md -->

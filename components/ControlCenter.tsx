@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useGrokTheme } from "../lib/theme";
 import { TZ } from "../lib/tz";
 import Campus3D from "./Campus3DLazy";
+import SampleList from "./SampleList";
 
 // ===== DATA (a refresh routine edits only these constants) =====
 // UPDATED: string shown in the HUD.
@@ -37,7 +38,7 @@ type Member = { name: string; role: string };
 type Goal = { label: string; current: number | null; target: number; due?: string };
 type Activity = { time: string; text: string };
 type Task = { text: string; state: "todo" | "doing" | "done"; owner?: string };
-type Team = {
+export type Team = {
   id: string; name: string; status: TeamStatus; lead: Member; members: Member[];
   work: string; next?: string; lines: string[]; pending: Pending[]; usage?: string; goal?: Goal;
   activity: Activity[]; tasks: Task[];
@@ -46,7 +47,9 @@ type Team = {
 type Routine = { id: string; owner: string; name: string; schedule: string; state: "on" | "paused" | "unknown"; lastRun?: string; lastResult?: "ok" | "fail"; next?: string; perWeek?: number; note?: string };
 
 let TEAMS: Team[] = [];
-export type DataShape = { UPDATED: string; USAGE: Usage; TEAMS: Team[] };
+type Provenance = { kind: string; revision: string; asOf: string; note: string };
+let PROVENANCE: Provenance | null = null;
+export type DataShape = { UPDATED: string; USAGE: Usage; TEAMS: Team[]; provenance?: Provenance };
 // ===== END DATA =====
 
 const STATUS_LABEL: Record<TeamStatus, string> = { active: "Active", partial: "Partly active", hold: "Waiting for you", frozen: "Frozen" };
@@ -98,7 +101,7 @@ const TREES = [
 ];
 
 // ---- data refresh: the web app fills RF (instant re-read of the latest data); on the canvas the button just re-reads the clock ----
-type RefreshApi = { busy: boolean; at: number; result: "" | "new" | "same" | "error"; reqAt: number; polling: boolean; refresh: () => void; note?: string };
+type RefreshApi = { busy: boolean; at: number; result: "" | "new" | "same" | "error" | "sample"; reqAt: number; polling: boolean; refresh: () => void; note?: string };
 // demo only (components/DemoApp.tsx): a client-side simulation of the bot; null in the real app
 type DemoApi = { snapshot: () => DataShape; send: (items: string[]) => void; refreshRound: () => void; subscribe: (fn: () => void) => () => void };
 let DEMO: DemoApi | null = null;
@@ -867,7 +870,7 @@ function Room(props: { team: Team; idx: number; t: number; onExit: () => void; d
         <g>
           <rect x={V.x + 12} y={V.y + 12} width={V.w - 24} height={34} rx={8} fill={th.fill.accentSubtle} />
           <circle cx={V.x + V.w - 34} cy={V.y + 29} r={6} fill={th.text.danger} opacity={0.5 + 0.5 * Math.sin(t * 5)} />
-          <text x={V.x + V.w - 48} y={V.y + 35} textAnchor="end" direction="ltr" fontSize={16} fontWeight={800} fill={th.text.danger}>LIVE</text>
+          <text x={V.x + V.w - 62} y={V.y + 35} textAnchor="end" direction="ltr" fontSize={14} fontWeight={800} fill={th.text.warning}>SAMPLE</text>
           <text x={V.x + 28} y={V.y + 35} textAnchor="start" direction="ltr" fontSize={15} fontWeight={700} fill={th.text.accent}>{ev.time}</text>
           <foreignObject x={V.x + 20} y={V.y + 54} width={V.w - 40} height={V.h - 100} opacity={evO}>
             <div dir="ltr" style={{ fontFamily: th.font.family, fontSize: L.portrait ? 21 : 19, lineHeight: L.portrait ? "28px" : "26px", color: th.text.primary, fontWeight: 600, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" } as any}>{ev.text}</div>
@@ -2454,7 +2457,7 @@ function Room3D(props: { team: Team; idx: number; t: number; vp: { w: number; h:
     <div onClick={go(3)} {...hover("tv")} title="Activity and goal" style={{ position: "absolute", left: L.tv.x, top: L.tv.y, width: L.tv.w, height: L.tv.h, transform: "translateZ(14px)", background: "#3a3a3c", borderRadius: 16, padding: 10, boxSizing: "border-box", cursor: "pointer", boxShadow: glowIf("tv", tc) }}>
       <div style={{ width: "100%", height: "100%", background: "#0d0d0d", borderRadius: 8, overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", background: hexMix(tc, 0.25, "#0d0d0d") }}>
-          <span style={{ width: 9, height: 9, borderRadius: 5, background: th.text.danger, opacity: 0.5 + 0.5 * Math.sin(t * 5) }} /><b style={{ fontSize: 15, color: th.text.danger }}>LIVE</b>
+          <span style={{ width: 9, height: 9, borderRadius: 5, background: th.text.warning, opacity: 0.5 + 0.5 * Math.sin(t * 5) }} /><b style={{ fontSize: 15, color: th.text.warning }}>SAMPLE</b>
           <b dir="ltr" style={{ marginInlineStart: "auto", fontSize: 14, color: th.text.accent }}>{cur ? cur.time : ""}</b>
         </div>
         <div style={{ flex: "1 1 auto", padding: "8px 12px", fontSize: portrait ? 17 : 19, lineHeight: portrait ? "23px" : "26px", fontWeight: 600, color: th.text.primary, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" } as any}>{cur ? cur.text : "Quiet here"}</div>
@@ -2736,13 +2739,12 @@ function ControlCenterInner() {
   const [feedOpen, setFeedOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
-  const [toast, setToast] = useState<{ msg: string; ok: boolean; t0: number; kind?: "tray" | "batch" | "queued" | "sent" | "failed" | "wait"; err?: string } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; ok: boolean; t0: number; kind?: "tray" | "batch" | "queued" | "sent" | "failed" | "wait" | "blocked"; err?: string } | null>(null);
   const [queue, setQueue] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
+  const [listMode, setListMode] = useState(false);
   const lastSend = useRef(0);
-  const loaded = useRef(false);
-  useEffect(() => { try { const v = JSON.parse(localStorage.getItem("trayQueue") || "[]"); if (Array.isArray(v)) setQueue(v.filter((x) => typeof x === "string")); } catch (e) {} loaded.current = true; }, []);
-  useEffect(() => { if (loaded.current) { try { localStorage.setItem("trayQueue", JSON.stringify(queue)); } catch (e) {} } }, [queue]);
+  useEffect(() => { try { localStorage.removeItem("trayQueue"); } catch { /* ignore */ } }, []);
   const [drawer, setDrawer] = useState<null | "tray" | "clock" | "usage">(null);
   const [openR, setOpenR] = useState<string | null>(null);
   const [vp, setVp] = useState({ w: 1400, h: 860 });
@@ -2845,48 +2847,20 @@ function ControlCenterInner() {
       else show(false);
     } catch (e) { show(false); }
   };
-  const enqueue = (msg: string) => setQueue((q) => (q.includes(msg) ? q : [...q, msg]));
-  const decide = (team: Team, item: Pending, kind: Decision["kind"], msg: string) => {
-    setDecisions({ ...decisions, [item.id]: { kind, msg } });
-    enqueue(msg);
-    setToast({ msg, ok: true, t0: t, kind: "queued" });
-  };
-  const send = (msg: string) => { enqueue(msg); setToast({ msg, ok: true, t0: t, kind: "queued" }); };
-  const sendNow = (m: string) => { enqueue(m); postItems([m]); };
-  const fmt = (items: string[]) => `Bot, ${items.length} requests from the page:\n` + items.map((m, i) => `${i + 1}. ${m}`).join("\n");
-  const batch = () => { if (queue.length) copyText(fmt(queue), "batch"); };
-  // live sending to the main bot through the server (/api/send); falls back to the clipboard
-  const postItems = async (items: string[]) => {
-    if (!items.length || sending) return;
-    const wait = 5000 - (Date.now() - lastSend.current);
-    if (wait > 0) { setToast({ msg: `You can send again in ${Math.ceil(wait / 1000)} seconds`, ok: true, t0: t, kind: "wait" }); return; }
-    lastSend.current = Date.now();
-    setSending(true);
-    if (DEMO) {
-      // demo: nothing leaves the browser; the simulation plays the team's follow-up
-      await new Promise((r) => setTimeout(r, 650));
-      DEMO.send(items);
-      setQueue((q) => q.filter((x) => !items.includes(x)));
-      setToast({ msg: fmt(items), ok: true, t0: t, kind: "sent" });
-      setSending(false);
-      return;
-    }
-    let err = "";
-    try {
-      const r = await fetch("/api/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) });
-      if (r.status === 401) { return; }
-      const j = await r.json().catch(() => ({}));
-      if (r.ok && j.ok) {
-        setQueue((q) => q.filter((x) => !items.includes(x)));
-        setToast({ msg: fmt(items), ok: true, t0: t, kind: "sent" });
-        setSending(false);
-        return;
-      }
-      err = j.error || `Error ${r.status}`;
-    } catch (e) { err = "No connection to the server"; }
+  const blockCommand = () => {
     setSending(false);
-    copyText(fmt(items), "failed", err);
+    setToast({
+      msg: "Sample preview only. Approve, reject, ask, and other commands stay on screen and are not sent. No bot is contacted, and this is not an approval.",
+      ok: false,
+      t0: t,
+      kind: "blocked",
+    });
   };
+  const decide = (_team: Team, _item: Pending, _kind: Decision["kind"], _msg: string) => blockCommand();
+  const send = (_msg: string) => blockCommand();
+  const sendNow = (_m: string) => blockCommand();
+  const batch = () => blockCommand();
+  const postItems = async (_items: string[]) => { blockCommand(); };
   const openDrawer = (d: "tray" | "clock" | "usage") => { setDrawer(drawer === d ? null : d); setFeedOpen(false); setInboxOpen(false); setSearch(null); setNewsOpen(false); };
   const now = nowMs();
   const allR = TEAMS.flatMap((tm) => (tm.routines || []).map((r) => ({ r, team: tm, at: nextAt(r) })));
@@ -2965,12 +2939,13 @@ function ControlCenterInner() {
     const typing = tg === "input" || tg === "textarea" || (e.target && e.target.isContentEditable);
     if ((e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setSearch(search ? null : { q: "", sel: 0 }); return; }
     if (e.key === "Escape") {
-      if (search) setSearch(null); else if (help) setHelp(false); else if (newsOpen) setNewsOpen(false); else if (drawer) setDrawer(null); else if (feedOpen || inboxOpen) { setFeedOpen(false); setInboxOpen(false); } else if (sheet) setSheet(null); else if (classic && pMember !== null) setPMember(null); else if (classic && inFocus) setInFocus(false); else if (room) exit(); else if (filter) setFilter(null);
+      if (listMode) setListMode(false); else if (search) setSearch(null); else if (help) setHelp(false); else if (newsOpen) setNewsOpen(false); else if (drawer) setDrawer(null); else if (feedOpen || inboxOpen) { setFeedOpen(false); setInboxOpen(false); } else if (sheet) setSheet(null); else if (classic && pMember !== null) setPMember(null); else if (classic && inFocus) setInFocus(false); else if (room) exit(); else if (filter) setFilter(null);
       return;
     }
     if (search && !typing) return;
     if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key;
+    if (listMode && k !== "l" && k !== "L") return;
     if (room && classic) {
       if (k === "ArrowLeft" || k === "ArrowRight") { e.preventDefault(); setInWall(inStep(inWall, k === "ArrowLeft" ? 1 : -1)); setInFocus(true); return; }
       if (k === "Enter" && !inFocus) { setInFocus(true); return; }
@@ -2995,6 +2970,7 @@ function ControlCenterInner() {
     else if (k === "n" || k === "N") setNewsOpen(!newsOpen);
     else if (k === "m" || k === "M") openDrawer("tray");
     else if (k === "f" || k === "F") { setFeedOpen(!feedOpen); setInboxOpen(false); setDrawer(null); }
+    else if (k === "l" || k === "L") setListMode((v) => !v);
   };
   useEffect(() => {
     const w = globalThis as any;
@@ -3028,9 +3004,16 @@ function ControlCenterInner() {
   };
 
   return (
-    <div dir="ltr" style={{ width: "100%", fontFamily: th.font.family, color: th.text.primary, background: th.bg.subtle }}>
-    <div style={{ display: "flex", alignItems: "stretch", width: "100%" }}>
-    <div style={{ position: "relative", flex: "1 1 auto", minWidth: 0, background: th.bg.subtle, overflow: "hidden", height: campusH, minHeight: 420 }}>
+    <div dir="ltr" style={{ width: "100%", height: campusH, display: "flex", flexDirection: "column", fontFamily: th.font.family, color: th.text.primary, background: th.bg.subtle }}>
+    <div role="status" style={{ flex: "none", padding: "6px 12px calc(6px + env(safe-area-inset-top))", background: "#1a1218", color: "#f3d0e4", fontSize: 12, lineHeight: "16px", borderBottom: "1px solid #3a1a2c" }}>
+      SAMPLE · {PROVENANCE?.note || "Invented example data. Usage figures are not actual usage. Refresh only reloads this snapshot. No bot is contacted."}
+      {" "}· {UPDATED}{PROVENANCE ? ` · ${PROVENANCE.revision}` : ""}
+    </div>
+    <div style={{ display: "flex", alignItems: "stretch", width: "100%", flex: 1, minHeight: 0 }}>
+    <div style={{ position: "relative", flex: "1 1 auto", minWidth: 0, background: th.bg.subtle, overflow: "hidden", height: "100%", minHeight: 0 }}>
+      {listMode && (
+        <SampleList teams={TEAMS} updated={UPDATED} provenance={PROVENANCE} onClose={() => setListMode(false)} onOpen={(id) => { setListMode(false); enter(id); }} />
+      )}
       {!(roomTeam && classic) && (
         <Scene t={t} teams={TEAMS} pos={pos} idxOf={idxOf} alertsOf={alertsOf} openOf={openOf} freshOf={freshOf} focus={room} dim={filter} hot={hot} padR={padR} padB={padB} fitBoxes={fitBoxes}
           cmd={cmd} view={viewRef} clockLines={clockLines} soonN={soon.length} onPick={(p: ScenePick) => enter(p.team, p.what === "person" ? "person" : (p.what as PanelTab | undefined), p.member)} onHot={setHot} onClock={() => openDrawer("clock")} tip={sceneTip} onFail={() => setGlFail(true)} />
@@ -3038,7 +3021,7 @@ function ControlCenterInner() {
 
       {/* floating HUD windows: visual right = waiting on you, visual left = in progress */}
       {!roomTeam && !phone && (
-        <FloatWin side="right" title="Waiting for your approval" count={approveOpenN} tone={th.text.warning} glow t={t} collapsed={colA} onToggle={() => setColA(!colA)} maxH={rightMax} top={winTop} w={winR} compact={compactHud}>{approveFloat}</FloatWin>
+        <FloatWin side="right" title="Sample queue (not sent)" count={approveOpenN} tone={th.text.warning} glow t={t} collapsed={colA} onToggle={() => setColA(!colA)} maxH={rightMax} top={winTop} w={winR} compact={compactHud}>{approveFloat}</FloatWin>
       )}
       {!roomTeam && !phone && (
         <FloatWin side="left" title="In progress" count={workRows.length} tone={th.text.accent} t={t} collapsed={colW} onToggle={() => setColW(!colW)} maxH={leftMax} top={winTop} w={winL} compact={compactHud}>{workFloat}</FloatWin>
@@ -3071,7 +3054,7 @@ function ControlCenterInner() {
       )}
 
       {/* HUD */}
-      <div style={{ position: "absolute", top: 12, insetInlineStart: "50%", transform: "translateX(-50%)", zIndex: 6, ...pill, gap: phone ? 12 : 16, padding: phone ? "5px 12px" : "6px 14px", maxWidth: "calc(100vw - 20px)", boxSizing: "border-box" }}>
+      <div style={{ position: "absolute", top: 12, insetInlineStart: "50%", transform: "translateX(-50%)", zIndex: 6, ...pill, gap: phone ? 8 : 16, padding: phone ? "5px 10px" : "6px 14px", maxWidth: "calc(100vw - 16px)", boxSizing: "border-box", overflowX: "auto" }}>
         <button onClick={() => { setInboxOpen(!inboxOpen); setFeedOpen(false); setDrawer(null); }} title="waiting for your approval" style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit", color: th.text.accent }}>
           <svg width={22} height={22} viewBox="0 0 20 20" style={{ transform: `scale(${(1 + 0.08 * Math.sin(t * 4)) * bumpS})` }}><path d="M2 11 l3 -7 h10 l3 7 v6 h-16 z" fill="none" stroke={th.text.accent} strokeWidth={1.8} strokeLinejoin="round" /><path d="M2 11 h5 l1 2 h4 l1 -2 h5" fill="none" stroke={th.text.accent} strokeWidth={1.8} /></svg>
           <b style={{ fontSize: 17, display: "inline-block", transform: `scale(${bumpS})` }}>{openTotal}</b>
@@ -3102,16 +3085,18 @@ function ControlCenterInner() {
           const res = rf && !busyNow && rf.at && Date.now() - rf.at < (rf.result === "new" ? 8000 : 4000) ? rf.result : "";
           const coolMs = rf && rf.reqAt ? 5 * 60000 - (Date.now() - rf.reqAt) : 0;
           const mmss = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`;
-          const lbl = busyNow ? "Refreshing…" : rf && rf.note ? rf.note : res === "new" ? "✓ New data loaded" : coolMs > 0 ? `Refresh request sent${rf && rf.polling ? " · waiting for data" : ""} · again in ${mmss(coolMs)}` : res === "same" ? "✓ No new data" : res === "error" ? "Loading failed" : lastAt ? `Updated ${ilTime(lastAt)}` : "Refresh";
-          const tip = rf ? "Refresh: reloads the saved data right away and asks the bot to update it from the team chats (at most once every 5 minutes)" : `Refresh: reloads the view (${UPDATED})`;
+          const lbl = busyNow ? "Reloading sample…" : res === "error" ? "Reload failed" : res === "sample" || res === "same" || res === "new" ? "Sample snapshot reloaded" : "Sample snapshot";
+          const tip = "Reload the cached sample snapshot. This does not contact a bot or collect new data.";
+          void coolMs; void mmss; void lastAt;
           return (
             <button onClick={() => (rf ? rf.refresh() : setRfLocal(Date.now()))} title={tip} aria-label="Refresh data" style={{ display: "flex", alignItems: "center", gap: 5, background: spin ? th.fill.secondary : "none", border: "none", borderRadius: 999, padding: spin ? "2px 8px" : 0, cursor: "pointer", font: "inherit", fontSize: 12, color: spin ? th.text.primary : th.text.tertiary, whiteSpace: "nowrap" }}>
               <span style={{ display: "inline-block", fontSize: 16, lineHeight: "16px", color: spin ? th.text.accent : th.text.secondary, transform: spin ? `rotate(${(t * 360) % 360}deg)` : "none" }}>⟳</span>
-              {!phone && <span style={{ color: res === "new" ? th.text.success : res === "error" ? th.text.danger : undefined, fontWeight: res ? 700 : 400 }}>{lbl}</span>}
-              {!phone && <span style={{ color: th.text.tertiary }}>· data from {dataStamp(UPDATED)}</span>}
+              {!phone && <span style={{ color: res === "error" ? th.text.danger : res ? th.text.success : undefined, fontWeight: res ? 700 : 400 }}>{lbl}</span>}
+              {!phone && <span style={{ color: th.text.tertiary }}>· example, not live</span>}
             </button>
           );
         })()}
+        <button onClick={() => setListMode(true)} title="Accessible team list (L)" style={{ font: "inherit", fontSize: 12, fontWeight: 700, minHeight: phone ? 32 : 22, padding: phone ? "4px 8px" : "2px 8px", borderRadius: 999, border: "none", background: th.fill.secondary, color: th.text.primary, cursor: "pointer" }}>List</button>
         {!phone && <button onClick={() => setHelp(!help)} title="Keyboard shortcuts (?)" style={{ width: 22, height: 22, borderRadius: 11, border: "none", background: th.fill.secondary, color: th.text.secondary, cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 700, padding: 0 }}>?</button>}
       </div>
 
@@ -3134,7 +3119,7 @@ function ControlCenterInner() {
       {tick && !roomTeam && !(phone && sheet) && (
         <div style={{ position: "absolute", bottom: phone ? 70 : 14, left: phone ? 10 : 14, right: phone ? 10 : 14, display: "flex", justifyContent: "center", zIndex: 6, pointerEvents: "none" }}>
           <div style={{ ...pill, pointerEvents: "auto", width: "min(700px, 100%)", maxWidth: "min(700px, 100%)", height: phone ? 50 : 54, gap: 10, paddingInlineEnd: 6, boxSizing: "border-box", borderRadius: 22, flex: "0 0 auto" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: th.text.danger }}><span style={{ width: 8, height: 8, borderRadius: 4, background: th.text.danger, opacity: 0.5 + 0.5 * Math.sin(t * 5) }} />LIVE</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: th.text.warning }}><span style={{ width: 8, height: 8, borderRadius: 4, background: th.text.warning, opacity: 0.5 + 0.5 * Math.sin(t * 5) }} />SAMPLE</span>
             <button onClick={() => enter(tick.team.id, "news")} style={{ opacity: tickO, transform: `translateY(${(1 - tickO) * 6}px)`, background: "none", border: "none", padding: 0, font: "inherit", fontSize: phone ? 13 : 14, lineHeight: phone ? "17px" : "19px", color: th.text.primary, cursor: "pointer", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", minWidth: 0, flex: "1 1 0", textAlign: "start", alignSelf: "center", maxHeight: phone ? 34 : 38 } as any}>
               <b>{tick.team.name}</b> <span style={{ color: th.text.tertiary }}>{tick.time}</span> · {tick.text}
             </button>
@@ -3148,8 +3133,8 @@ function ControlCenterInner() {
         <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 7, display: "flex", flexDirection: "column", ...(sheet ? { ...glass, borderRadius: "20px 20px 0 0", height: sheetH } : {}), transition: "height 300ms" }}>
           <div style={{ display: "flex", gap: 8, padding: "10px 10px 10px" }}>
             {(["approve", "work"] as const).map((k) => (
-              <button key={k} onClick={() => setSheet(sheet === k ? null : k)} style={{ flex: 1, font: "inherit", fontSize: 14, fontWeight: 700, padding: "10px 8px", borderRadius: 999, border: `1px solid ${sheet === k ? th.fill.accent : th.border.default}`, background: sheet === k ? th.border.strong : th.bg.elevated, color: th.text.primary, cursor: "pointer", boxShadow: "0 6px 18px rgba(0,0,0,.3)" }}>
-                {k === "approve" ? "⏳ Awaiting approval" : "⚙️ In progress"} <b style={{ color: th.text.accent }}>{k === "approve" ? approveOpenN : workRows.length}</b>
+              <button key={k} onClick={() => setSheet(sheet === k ? null : k)} style={{ flex: 1, font: "inherit", fontSize: 14, fontWeight: 700, minHeight: 44, padding: "10px 8px", borderRadius: 999, border: `1px solid ${sheet === k ? th.fill.accent : th.border.default}`, background: sheet === k ? th.border.strong : th.bg.elevated, color: th.text.primary, cursor: "pointer", boxShadow: "0 6px 18px rgba(0,0,0,.3)" }}>
+                {k === "approve" ? "Sample queue" : "In progress"} <b style={{ color: th.text.accent }}>{k === "approve" ? approveOpenN : workRows.length}</b>
               </button>
             ))}
           </div>
@@ -3198,7 +3183,7 @@ function ControlCenterInner() {
       {help && (
         <div onClick={() => setHelp(false)} style={{ position: "absolute", top: 60, left: "50%", transform: "translateX(-50%)", width: "min(460px, calc(100% - 24px))", zIndex: 10, ...glass, borderRadius: 20, padding: "14px 18px" }}>
           <b style={{ fontSize: 15 }}>Keyboard shortcuts</b>
-          {[["/ or Ctrl+K", "Search"], ["1–9", "Open a team's room"], ["] / [", "Next / previous team (all teams, also past 9)"], ["Esc", "Close / back to campus"], ["A / W", "Approvals window / In-progress window"], ["N", "What's new since your last visit"], ["M", "Bot tray"], ["F", "Full feed"], ["+ / −", "Zoom"], ["Q / E", "Rotate the camera"], ["T", "Tilt the camera"], ["H", "Back to the overview"], ["Enter", "Enter the room (from the room view)"], ["← →", "In a room: switch boards"], ["Drag in a room", "look around · double-click: normal view"], ["↑ ↓", "In a room: previous / next room"], ["Drag", "pan · right/Shift+drag: rotate · wheel: zoom"]].map(([k, d]) => (
+          {[["/ or Ctrl+K", "Search"], ["1–9", "Open a team's room"], ["] / [", "Next / previous team (all teams, also past 9)"], ["L", "Team list (accessible alternative)"], ["Esc", "Close / back to campus"], ["A / W", "Sample queue / In-progress window"], ["N", "What's new since your last visit"], ["M", "Bot tray (commands are off)"], ["F", "Full feed"], ["+ / −", "Zoom"], ["Q / E", "Rotate the camera"], ["T", "Tilt the camera"], ["H", "Back to the overview"], ["Enter", "Enter the room (from the room view)"], ["← →", "In a room: switch boards"], ["Drag in a room", "look around · double-click: normal view"], ["↑ ↓", "In a room: previous / next room"], ["Drag", "pan · right/Shift+drag: rotate · wheel: zoom"]].map(([k, d]) => (
             <div key={k} style={{ display: "flex", gap: 10, fontSize: 13, padding: "5px 0", borderBottom: `1px solid ${th.border.weak}` }}><b dir="ltr" style={{ minWidth: 92, color: th.text.accent }}>{k}</b><span>{d}</span></div>
           ))}
         </div>
@@ -3233,7 +3218,7 @@ function ControlCenterInner() {
         )}
         {drawer === "tray" && (
           <div>
-            {queue.length === 0 ? <div style={{ textAlign: "center", color: th.text.tertiary, padding: "18px 0", fontSize: 15 }}>Empty. Every button on the page adds a request here.</div> : (
+            {queue.length === 0 ? <div style={{ textAlign: "center", color: th.text.tertiary, padding: "18px 0", fontSize: 15 }}>Commands are off in this sample. Nothing is queued or sent, and no bot is contacted.</div> : (
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 {queue.map((m, i) => (
                   <div key={m} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: th.bg.subtle, borderRadius: 14, padding: "8px 10px", fontSize: 14, lineHeight: "20px" }}>
@@ -3284,6 +3269,7 @@ function ControlCenterInner() {
         )}
         {drawer === "usage" && (
           <div>
+            <div style={{ background: th.fill.warningSubtle, borderRadius: 14, padding: "8px 11px", fontSize: 13, lineHeight: "18px", marginBottom: 10 }}>Example figures, not actual usage. {PROVENANCE?.note}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, background: th.bg.subtle, borderRadius: 14, padding: "10px 12px", fontSize: 14 }}>
               <b style={{ fontSize: 26 }}>{USAGE.weeklyPct}%</b><span>of the week used · resets {USAGE.reset}</span>
             </div>
@@ -3317,7 +3303,7 @@ function ControlCenterInner() {
       {/* toast */}
       {toastVisible && toast && (
         <div style={{ position: "fixed", bottom: 76, left: "50%", transform: "translateX(-50%)", zIndex: 9, width: "max-content", maxWidth: "min(560px, 92vw)", background: th.bg.elevated, color: th.text.primary, border: `1px solid ${toast.kind === "sent" ? th.text.success : toast.kind === "failed" ? th.text.danger : th.border.default}`, borderRadius: 20, padding: "10px 16px", boxShadow: "0 10px 30px rgba(0,0,0,.25)", fontSize: 14, lineHeight: "20px" }} dir="ltr">
-          <div style={{ fontWeight: 700, marginBottom: 2, color: toast.kind === "sent" ? th.text.success : toast.kind === "failed" ? th.text.danger : th.text.primary }}>{toast.kind === "queued" ? "Added to the bot tray" : toast.kind === "sent" ? "Sent to the bot ✓" : toast.kind === "wait" ? "One moment…" : toast.kind === "failed" ? `Sending failed${toast.err ? ` (${toast.err})` : ""}. ${toast.ok ? "Message copied — paste it to the bot:" : "Copy the message and paste it to the bot:"}` : toast.ok ? "Copied — paste it to the bot" : "Copy the message and paste it in your chat with the bot:"}</div>
+          <div style={{ fontWeight: 700, marginBottom: 2, color: toast.kind === "blocked" ? th.text.warning : toast.kind === "sent" ? th.text.success : toast.kind === "failed" ? th.text.danger : th.text.primary }}>{toast.kind === "blocked" ? "Not sent" : toast.kind === "queued" ? "Added to the bot tray" : toast.kind === "sent" ? "Sent to the bot ✓" : toast.kind === "wait" ? "One moment…" : toast.kind === "failed" ? `Sending failed${toast.err ? ` (${toast.err})` : ""}. ${toast.ok ? "Message copied — paste it to the bot:" : "Copy the message and paste it to the bot:"}` : toast.ok ? "Copied — paste it to the bot" : "Copy the message and paste it in your chat with the bot:"}</div>
           <div style={{ userSelect: "all", opacity: 0.9, whiteSpace: "pre-line", maxHeight: 140, overflowY: "auto" }}>{toast.msg}</div>
           {toast.kind === "sent" && DEMO && <div style={{ marginTop: 4, fontSize: 12.5, color: th.text.secondary }}>Watch the feed: the team picks it up in a few seconds.</div>}
           {toast.kind === "queued" && (
@@ -3343,7 +3329,7 @@ export default function ControlCenter(props: { initial: DataShape; demo?: DemoAp
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [at, setAt] = useState(0);
-  const [result, setResult] = useState<"" | "new" | "same" | "error">("");
+  const [result, setResult] = useState<"" | "new" | "same" | "error" | "sample">("");
   const [reqAt, setReqAt] = useState(0);
   const [pollUntil, setPollUntil] = useState(0);
   const stampAtReq = useRef("");
@@ -3402,42 +3388,16 @@ export default function ControlCenter(props: { initial: DataShape; demo?: DemoAp
     return () => clearInterval(id);
   }, [pollUntil]);
   const remember = (v: number) => { setReqAt(v); try { localStorage.setItem("ccRefreshReq", String(v)); } catch (e) {} };
-  // the ⟳ button: (1) re-read the latest data right away; (2) at most once per 5 minutes, ask the main bot to refresh it from the team chats
+  // ⟳ re-reads the cached sample snapshot only. It does not ask a bot to collect data.
   const refresh = async () => {
     if (busyRef.current) return;
-    if (demo) {
-      // demo: the same states as the real flow (request sent -> the bot reads the chats -> new data), all simulated
-      if (pollUntil) return;
-      busyRef.current = true; setBusy(true);
-      const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
-      await pause(700); await load(); setAt(Date.now());
-      busyRef.current = false; setBusy(false);
-      setReqAt(Date.now()); setPollUntil(Date.now() + 6 * 60000);
-      await pause(2200); setNote("The bot is reading the team chats…");
-      await pause(3600); setNote("Updating the page…");
-      await pause(1400);
-      demo.refreshRound(); await load(); setAt(Date.now());
-      setNote(""); setPollUntil(0); setReqAt(0); setResult("new");
-      return;
-    }
-    busyRef.current = true; setBusy(true);
-    const t0 = Date.now();
+    busyRef.current = true; setBusy(true); setNote(""); setPollUntil(0); setReqAt(0);
     const res = await load();
-    setResult(res);
+    setResult(res === "error" ? "error" : "sample");
     setAt(Date.now());
-    if (Date.now() - reqAt >= 5 * 60000) {
-      try {
-        const r = await fetch("/api/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "refresh" }) });
-        const j = await r.json().catch(() => ({}));
-        if (r.ok && j.ok) { remember(Number(j.at) || Date.now()); stampAtReq.current = data.UPDATED; setPollUntil(Date.now() + 6 * 60000); }
-        else if (j.limited) remember(Number(j.at) || Date.now() - (5 * 60000 - (Number(j.waitMs) || 0)));
-      } catch (e) {}
-    }
-    const left = 600 - (Date.now() - t0);
-    if (left > 0) await new Promise((r) => setTimeout(r, left));
     busyRef.current = false; setBusy(false);
   };
-  UPDATED = data.UPDATED; USAGE = data.USAGE; TEAMS = data.TEAMS;
+  UPDATED = data.UPDATED; USAGE = data.USAGE; TEAMS = data.TEAMS; PROVENANCE = data.provenance || null;
   RF = { busy, at, result, reqAt, polling: pollUntil > 0, refresh, note };
   DEMO = demo;
   if (!mounted) return <div style={{ height: "100dvh", background: "#141414" }} />;

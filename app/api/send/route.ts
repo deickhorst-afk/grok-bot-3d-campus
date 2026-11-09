@@ -1,10 +1,19 @@
 export const dynamic = "force-dynamic";
-// Demo mode: nothing is sent anywhere.
-// In the real app this route forwards the queued commands (or a refresh request) to the main bot's webhook routine.
-export async function POST(req: Request) {
-  let body: any = null;
-  try { body = await req.json(); } catch (e) {}
-  if (body && body.kind === "refresh") return Response.json({ ok: true, demo: true, kind: "refresh", at: Date.now(), waitMs: 5 * 60000 });
-  const n = Array.isArray(body?.items) ? body.items.length : 0;
-  return Response.json({ ok: true, demo: true, count: n });
+
+const BODY = {
+  ok: false,
+  demo: true,
+  sent: false,
+  contacted: false,
+  error: "Sample preview: commands, approvals, refresh wakes, and webhooks are disabled.",
+};
+const HEADERS = { "Cache-Control": "no-store" };
+
+// Disabled on purpose. The handler does not read a webhook, does not fetch, and does not wake anything.
+export async function POST() {
+  return Response.json(BODY, { status: 403, headers: HEADERS });
+}
+
+export async function GET() {
+  return Response.json(BODY, { status: 405, headers: HEADERS });
 }
